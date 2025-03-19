@@ -1,54 +1,81 @@
 #' Title
 #'
-#' @param population_from
-#' @param population_where
-#' @param idvar
-#' @param treatment_var
-#' @param treatment_order
-#' @param site_var
-#' @param country_var
-#' @param level_col_name
-#' @param display_total_list
-#' @param topleft_label
-#' @param subgroup_var
-#' @param subgroup_order
-#' @param subgroup_label
-#' @param subgroup_by_col
-#' @param col_rel_width
-#' @param column_order
-#' @param column_group
-#' @param column_grouped_name
-#' @param tlf_number
-#' @param title_text
-#' @param subtitle_text
-#' @param studyID
-#' @param page_header
-#' @param page_note
-#' @param page_nrow
-#' @param title_note
-#' @param foot_note
-#' @param program_loc
-#' @param output_file
+#' @inheritParams toy::dm_site_core
+#' @param topleft_label A character vector of top-left column headers.
+#' @param subgroup_var A string representing the variable name for subject ID.
+#' @param subgroup_order A character vector of sub groups in the desired order.
+#' @param subgroup_label A string representing the label for sub groups.
+#' @param subgroup_by_col A logical parameter indicating whether to include subgroups on same page.
+#' @param rtf A logical parameter indicating whether to write an RTF file.
+#' @param col_rel_width A numeric vector of column widths.
+#' @param column_order A character vector of column order.
+#' @param column_group A character vector of grouped column names on first row.
+#' @param column_grouped_name A character vector of customized column names on second row.
+#' @param tlf_number A string representing the number of table/listing/figure.
+#' @param title_text A string representing the title.
+#' @param subtitle_text A string representing the sub title.
+#' @param studyID A string representing the study ID.
+#' @param page_header A string representing the page header.
+#' @param page_note A string representing the page note.
+#' @param page_nrow A numeric representing the number of rows per page.
+#' @param title_note A string representing the title note.
+#' @param foot_note A string representing the foot note.
+#' @param program_loc A string representing the program location.
+#' @param output_file A string representing the path to the output file.
 #'
-#' @return
+#' @return A list containing three data frames: one named report.table,
+#' one named report.table.n for count results,
+#' and the other named report.table.p for percentage results.
+#' @importFrom toy dm_site_core
+#' @import dplyr, r2rtf
 #' @export
 #'
 #' @examples
+#' # Define parameters
+#' tlf_number <- "Table 1.2"
+#' title_text <- "Number of Participants Randomized by Site"
+#' subtitle_text <- "Randomized Set"
+#' studyID <- "<Study ID>"
+#' page_header <- "<Page Header>"
+#' page_note <- "<Page Note>"
+#' page_nrow <- 30
+#' title_note <- "<Title Note>"
+#' foot_note <- "<Foot Note>"
+#'
+#' # Call the function
+#' dm_site_tbl(
+#'   population_from = toy::demo_adsl,
+#'   country_var = "COUNTRY",
+#'   topleft_label = c("Country", "Site"),
+#'   # subgroup_var = "SEX",
+#'   # subgroup_by_col = TRUE,
+#'   rtf = FALSE,
+#'   tlf_number = tlf_number,
+#'   title_text = title_text,
+#'   subtitle_text = subtitle_text,
+#'   studyID = studyID,
+#'   page_header = page_header,
+#'   page_note = page_note,
+#'   page_nrow = page_nrow,
+#'   title_note = title_note,
+#'   foot_note = foot_note
+#' )
 dm_site_tbl <- function(
     population_from,
     population_where = NULL,
     idvar = "USUBJID",
     treatment_var = "TRT01P",
     treatment_order = NULL,
-    site_var = "SITEID", # site variable, default as SITEID
-    country_var = NULL,  # country variable, optional
+    site_var = "SITEID",
+    country_var = NULL,
     level_col_name = FALSE,
     display_total_list = NULL,
-    topleft_label = c("","Site"), # top-left column headers
+    topleft_label = c("","Site"),
     subgroup_var = NULL,
     subgroup_order = NULL,
     subgroup_label = NULL,
     subgroup_by_col = FALSE,
+    rtf = TRUE,
     col_rel_width = NULL,
     column_order = NULL,
     column_group = NULL,
@@ -67,6 +94,7 @@ dm_site_tbl <- function(
 ){
 
   ## step 0: validate parameters and set defaults
+  checkmate::assert_logical(rtf)
   txt_ind_left <- if(is.null(country_var)) rep(0, 3) else c(0, 0, 200)
   topleft_label <- if(length(topleft_label)==1) c("",topleft_label) else topleft_label
 
@@ -90,7 +118,7 @@ dm_site_tbl <- function(
 
 
   # Define subgroup prototype
-  subType <-  case_when(
+  subType <-  dplyr::case_when(
     is.null(subgroup_var) ~ 'no',
     isFALSE(subgroup_by_col) ~ 'multi',
     TRUE ~ 'same'
@@ -216,12 +244,12 @@ dm_site_tbl <- function(
   final.table <-
     ftbl %>%
     purrr::map(~
-      .x %>%
-        group_split(!!!rlang::syms(c('ord', country_var))) %>%
-        purrr::map_dfr(~ .x %>% add_row(ord = NA)) %>% # add blank rows between groups
-        drop_cols(c(country_var, site_var), -ord) %>%
-        dplyr::mutate_all(~ na2blank(.x)) #%>%
-        # dplyr::filter(row_number() != n()) # remove extra empty row
+                 .x %>%
+                 group_split(!!!rlang::syms(c('ord', country_var))) %>%
+                 purrr::map_dfr(~ .x %>% add_row(ord = NA)) %>% # add blank rows between groups
+                 drop_cols(c(country_var, site_var), -ord) %>%
+                 dplyr::mutate_all(~ na2blank(.x)) #%>%
+               # dplyr::filter(row_number() != n()) # remove extra empty row
     )
 
   message('final table generated!')
@@ -230,7 +258,7 @@ dm_site_tbl <- function(
 
 
   ## step 3: output in rtf file
-  rtf <-
+  rtf_tbl <-
     seq_along(final.table) %>%
     purrr::map(
       function(s)
@@ -247,8 +275,8 @@ dm_site_tbl <- function(
           page_nrow = page_nrow,
           title_note =
             if(subType %in% c('no', 'same')) title_note
-            else if(is.null(title_note)) paste0(subgroup_label, ': ', subgroup_order[s])
-            else paste0(title_note, '\n', subgroup_label, ': ', subgroup_order[s]),
+          else if(is.null(title_note)) paste0(subgroup_label, ': ', subgroup_order[s])
+          else paste0(title_note, '\n', subgroup_label, ': ', subgroup_order[s]),
           foot_note = if(s<length(final.table)) NULL else foot_note,
           program_loc = program_loc,
           subtype = subType,
@@ -262,26 +290,28 @@ dm_site_tbl <- function(
         )
     )
 
+  if (rtf) {
 
-  # Output multiple RTF files
-  temp_files <- replicate(length(rtf), tempfile(fileext = '.rtf'))
+    # Output multiple RTF files
+    temp_files <- replicate(length(rtf_tbl), tempfile(fileext = '.rtf'))
 
-  seq_along(rtf) %>%
-    purrr::map(
-      function(s)
-        rtf[[s]] %>%
-        r2rtf::rtf_encode() %>%
-        r2rtf::write_rtf(temp_files[s])
-    )
+    seq_along(rtf_tbl) %>%
+      purrr::map(
+        function(s)
+          rtf_tbl[[s]] %>%
+          r2rtf::rtf_encode() %>%
+          r2rtf::write_rtf(temp_files[s])
+      )
 
-  # Assemble multiple RTF files
-  rtf_assemble1(temp_files) %>%
-    r2rtf::write_rtf(output_file)
+    # Assemble multiple RTF files
+    rtf_assemble1(temp_files) %>%
+      r2rtf::write_rtf(output_file)
 
-  purrr::walk(temp_files, file.remove)
+    purrr::walk(temp_files, file.remove)
 
-  message('rtf outputted!')
+    message('rtf outputted!')
 
+  }
 
   ## step 4: Get n & p tables
 
